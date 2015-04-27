@@ -18,6 +18,7 @@
  */
 package com.l2jserver;
 
+import java.util.Calendar;
 import java.util.concurrent.ScheduledFuture;
 import java.util.logging.Logger;
 
@@ -31,6 +32,47 @@ public final class EventManager
 	protected static final Logger _log = Logger.getLogger(EventManager.class.getName());
 	
 	private StartTask _task;
+	
+	/**
+	 * Starts TvTStartTask
+	 */
+	public void scheduleEventStart()
+	{
+		try
+		{
+			Calendar currentTime = Calendar.getInstance();
+			Calendar nextStartTime = null;
+			Calendar testStartTime = null;
+			for (String timeOfDay : Config.TVT_EVENT_INTERVAL)
+			{
+				// Creating a Calendar object from the specified interval value
+				testStartTime = Calendar.getInstance();
+				testStartTime.setLenient(true);
+				String[] splitTimeOfDay = timeOfDay.split(":");
+				testStartTime.set(Calendar.HOUR_OF_DAY, Integer.parseInt(splitTimeOfDay[0]));
+				testStartTime.set(Calendar.MINUTE, Integer.parseInt(splitTimeOfDay[1]));
+				// If the date is in the past, make it the next day (Example: Checking for "1:00", when the time is 23:57.)
+				if (testStartTime.getTimeInMillis() < currentTime.getTimeInMillis())
+				{
+					testStartTime.add(Calendar.DAY_OF_MONTH, 1);
+				}
+				// Check for the test date to be the minimum (smallest in the specified list)
+				if ((nextStartTime == null) || (testStartTime.getTimeInMillis() < nextStartTime.getTimeInMillis()))
+				{
+					nextStartTime = testStartTime;
+				}
+			}
+			if (nextStartTime != null)
+			{
+				_task = new StartTask(nextStartTime.getTimeInMillis());
+				ThreadPoolManager.getInstance().executeGeneral(_task);
+			}
+		}
+		catch (Exception e)
+		{
+			_log.warning("TvTEventEngine[TvTManager.scheduleEventStart()]: Error figuring out a start time. Check TvTEventInterval in config file.");
+		}
+	}
 	
 	/**
 	 * Method to start participation
@@ -81,7 +123,7 @@ public final class EventManager
 	{
 		Broadcast.toAllOnlinePlayers(EventEngine.calculateRewards());
 		EventEngine.sysMsgToAllParticipants("TvT Event: Teleporting back to the registration npc in " + Config.TVT_EVENT_START_LEAVE_TELEPORT_DELAY + " second(s).");
-		EventEngine.stopFight();
+		EventEngine.startFight();
 		
 		scheduleEventStart();
 	}

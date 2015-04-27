@@ -16,19 +16,14 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-package com.l2jserver.on;
+package com.l2jserver;
 
-import com.l2jserver.EventType;
-import com.l2jserver.IBaseEvent;
+import java.util.logging.Logger;
 
-/**
- * @author UnAfraid
- */
-public class OnEventStart implements IBaseEvent
+public final class AbstractEvent
 {
-	@Override
-	public EventType getType()
-	{
-		return EventType.ON_EVENT_START;
-	}
+	// Logger for this class
+	protected static final Logger _log = Logger.getLogger(AbstractEvent.class.getName());
+	
+	
 }

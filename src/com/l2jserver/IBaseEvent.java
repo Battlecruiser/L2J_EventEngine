@@ -18,8 +18,6 @@
  */
 package com.l2jserver;
 
-import com.l2jserver.gameserver.model.events.EventType;
-
 /**
  * @author UnAfraid
  */

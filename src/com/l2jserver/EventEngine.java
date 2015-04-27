@@ -18,21 +18,22 @@
  */
 package com.l2jserver;
 
-import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.l2jserver.entity.EventTeam;
-import com.l2jserver.gameserver.data.xml.impl.DoorData;
+import com.l2jserver.gameserver.cache.HtmCache;
+import com.l2jserver.gameserver.datatables.ItemTable;
 import com.l2jserver.gameserver.datatables.SpawnTable;
-import com.l2jserver.gameserver.instancemanager.InstanceManager;
 import com.l2jserver.gameserver.model.L2Spawn;
 import com.l2jserver.gameserver.model.actor.L2Npc;
-import com.l2jserver.gameserver.model.actor.instance.L2DoorInstance;
 import com.l2jserver.gameserver.model.actor.instance.L2PcInstance;
-import com.l2jserver.gameserver.model.entity.Instance;
-import com.l2jserver.gameserver.model.events.EventDispatcher;
+import com.l2jserver.gameserver.model.itemcontainer.PcInventory;
+import com.l2jserver.gameserver.network.SystemMessageId;
 import com.l2jserver.gameserver.network.serverpackets.MagicSkillUse;
+import com.l2jserver.gameserver.network.serverpackets.NpcHtmlMessage;
+import com.l2jserver.gameserver.network.serverpackets.StatusUpdate;
+import com.l2jserver.gameserver.network.serverpackets.SystemMessage;
 
 public final class EventEngine
 {
@@ -49,6 +50,7 @@ public final class EventEngine
 		REWARDING
 	}
 	
+	private static final String htmlPath = "data/html/events/";
 	private static EventState _state = EventState.INACTIVE;
 	private static EventTeam[] _teams = new EventTeam[2];
 	private static L2Npc _lastNpcSpawn = null;
@@ -92,7 +94,7 @@ public final class EventEngine
 		}
 		
 		setState(EventState.PARTICIPATING);
-		EventDispatcher.getInstance().notifyEventAsync(new OnEventRegistrationStart());
+		//EventDispatcher.getInstance().notifyEventAsync(new OnEventRegistrationStart());
 		return true;
 	}
 
@@ -189,6 +191,111 @@ public final class EventEngine
 	}
 	
 	/**
+	 * Calculates the TvTEvent reward<br>
+	 * 1. If both teams are at a tie(points equals), send it as system message to all participants, if one of the teams have 0 participants left online abort rewarding<br>
+	 * 2. Wait till teams are not at a tie anymore<br>
+	 * 3. Set state EvcentState.REWARDING<br>
+	 * 4. Reward team with more points<br>
+	 * 5. Show win html to wining team participants<br>
+	 * <br>
+	 * @return String: winning team name<br>
+	 */
+	public static String calculateRewards()
+	{
+		if (_teams[0].getPoints() == _teams[1].getPoints())
+		{
+			// Check if one of the teams have no more players left
+			if ((_teams[0].getParticipatedPlayerCount() == 0) || (_teams[1].getParticipatedPlayerCount() == 0))
+			{
+				// set state to rewarding
+				setState(EventState.REWARDING);
+				// return here, the fight can't be completed
+				return "TvT Event: Event has ended. No team won due to inactivity!";
+			}
+			
+			// Both teams have equals points
+			sysMsgToAllParticipants("TvT Event: Event has ended, both teams have tied.");
+			if (Config.TVT_REWARD_TEAM_TIE)
+			{
+				rewardTeam(_teams[0]);
+				rewardTeam(_teams[1]);
+				return "TvT Event: Event has ended with both teams tying.";
+			}
+			return "TvT Event: Event has ended with both teams tying.";
+		}
+		
+		// Set state REWARDING so nobody can point anymore
+		setState(EventState.REWARDING);
+		
+		// Get team which has more points
+		EventTeam team = _teams[_teams[0].getPoints() > _teams[1].getPoints() ? 0 : 1];
+		rewardTeam(team);
+		
+		// Notify to scripts.
+		//EventDispatcher.getInstance().notifyEventAsync(new OnEventFinish());
+		return "TvT Event: Event finish. Team " + team.getName() + " won with " + team.getPoints() + " kills.";
+	}
+	
+	private static void rewardTeam(EventTeam team)
+	{
+		// Iterate over all participated player instances of the winning team
+		for (L2PcInstance playerInstance : team.getParticipatedPlayers().values())
+		{
+			// Check for nullpointer
+			if (playerInstance == null)
+			{
+				continue;
+			}
+			
+			SystemMessage systemMessage = null;
+			
+			// Iterate over all tvt event rewards
+			for (int[] reward : Config.TVT_EVENT_REWARDS)
+			{
+				PcInventory inv = playerInstance.getInventory();
+				
+				// Check for stackable item, non stackabe items need to be added one by one
+				if (ItemTable.getInstance().getTemplate(reward[0]).isStackable())
+				{
+					inv.addItem("TvT Event", reward[0], reward[1], playerInstance, playerInstance);
+					
+					if (reward[1] > 1)
+					{
+						systemMessage = SystemMessage.getSystemMessage(SystemMessageId.EARNED_S2_S1_S);
+						systemMessage.addItemName(reward[0]);
+						systemMessage.addLong(reward[1]);
+					}
+					else
+					{
+						systemMessage = SystemMessage.getSystemMessage(SystemMessageId.EARNED_ITEM_S1);
+						systemMessage.addItemName(reward[0]);
+					}
+					
+					playerInstance.sendPacket(systemMessage);
+				}
+				else
+				{
+					for (int i = 0; i < reward[1]; ++i)
+					{
+						inv.addItem("TvT Event", reward[0], 1, playerInstance, playerInstance);
+						systemMessage = SystemMessage.getSystemMessage(SystemMessageId.EARNED_ITEM_S1);
+						systemMessage.addItemName(reward[0]);
+						playerInstance.sendPacket(systemMessage);
+					}
+				}
+			}
+			
+			StatusUpdate statusUpdate = new StatusUpdate(playerInstance);
+			final NpcHtmlMessage npcHtmlMessage = new NpcHtmlMessage();
+			
+			statusUpdate.addAttribute(StatusUpdate.CUR_LOAD, playerInstance.getCurrentLoad());
+			npcHtmlMessage.setHtml(HtmCache.getInstance().getHtm(playerInstance.getHtmlPrefix(), htmlPath + "Reward.html"));
+			playerInstance.sendPacket(statusUpdate);
+			playerInstance.sendPacket(npcHtmlMessage);
+		}
+	}
+	
+	/**
 	 * Send a SystemMessage to all participated players<br>
 	 * 1. Send the message to all players of team number one<br>
 	 * 2. Send the message to all players of team number two<br>
@@ -212,90 +319,8 @@ public final class EventEngine
 				playerInstance.sendMessage(message);
 			}
 		}
-		
-		for (L2PcInstance playerInstance : _teams[3].getParticipatedPlayers().values())
-		{
-			if (playerInstance != null)
-			{
-				playerInstance.sendMessage(message);
-			}
-		}
-		
-		for (L2PcInstance playerInstance : _teams[4].getParticipatedPlayers().values())
-		{
-			if (playerInstance != null)
-			{
-				playerInstance.sendMessage(message);
-			}
-		}
-		
-		for (L2PcInstance playerInstance : _teams[5].getParticipatedPlayers().values())
-		{
-			if (playerInstance != null)
-			{
-				playerInstance.sendMessage(message);
-			}
-		}
-		
-		for (L2PcInstance playerInstance : _teams[6].getParticipatedPlayers().values())
-		{
-			if (playerInstance != null)
-			{
-				playerInstance.sendMessage(message);
-			}
-		}
-		
-		for (L2PcInstance playerInstance : _teams[7].getParticipatedPlayers().values())
-		{
-			if (playerInstance != null)
-			{
-				playerInstance.sendMessage(message);
-			}
-		}
-		
-		for (L2PcInstance playerInstance : _teams[8].getParticipatedPlayers().values())
-		{
-			if (playerInstance != null)
-			{
-				playerInstance.sendMessage(message);
-			}
-		}
-		
-		for (L2PcInstance playerInstance : _teams[9].getParticipatedPlayers().values())
-		{
-			if (playerInstance != null)
-			{
-				playerInstance.sendMessage(message);
-			}
-		}
-		
-		for (L2PcInstance playerInstance : _teams[10].getParticipatedPlayers().values())
-		{
-			if (playerInstance != null)
-			{
-				playerInstance.sendMessage(message);
-			}
-		}
 	}
-
-	private static L2DoorInstance getDoor(int doorId)
-	{
-		L2DoorInstance door = null;
-		if (_EventInstance <= 0)
-		{
-			door = DoorData.getInstance().getDoor(doorId);
-		}
-		else
-		{
-			final Instance inst = InstanceManager.getInstance().getInstance(_EventInstance);
-			if (inst != null)
-			{
-				door = inst.getDoor(doorId);
-			}
-		}
-		return door;
-	}
-
+	
 	/**
 	 * Returns the team id of a player, if player is not participant it returns -1
 	 * @param playerObjectId
@@ -309,5 +334,10 @@ public final class EventEngine
 	public static int getEventInstance()
 	{
 		return _EventInstance;
+	}
+
+	public static boolean startFight() {
+		// TODO Auto-generated method stub
+		return false;
 	}
 }

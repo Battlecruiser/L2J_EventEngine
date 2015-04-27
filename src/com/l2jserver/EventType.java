@@ -18,7 +18,6 @@
  */
 package com.l2jserver;
 
-import com.l2jserver.gameserver.model.events.impl.IBaseEvent;
 import com.l2jserver.gameserver.util.Util;
 import com.l2jserver.on.OnEventFinish;
 import com.l2jserver.on.OnEventKill;

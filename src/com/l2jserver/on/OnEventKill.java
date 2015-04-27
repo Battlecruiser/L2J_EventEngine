@@ -18,9 +18,9 @@
  */
 package com.l2jserver.on;
 
+import com.l2jserver.EventType;
+import com.l2jserver.IBaseEvent;
 import com.l2jserver.gameserver.model.actor.instance.L2PcInstance;
-import com.l2jserver.gameserver.model.events.EventType;
-import com.l2jserver.gameserver.model.events.impl.IBaseEvent;
 
 /**
  * @author UnAfraid
